@@ -1,38 +1,35 @@
-var express = require("express")
-var bodyParser = require("body-parser")
-var crypto = require("crypto")
+const express = require("express")
+const WebSocket = require("ws")
 
-var app = express()
+const app = express()
+app.use(express.json())
 
-app.use(bodyParser.json())
-app.use(bodyParser.urlencoded({extended: true}))
+const server = app.listen(process.env.PORT || 3000)
 
-app.listen(8080, () => {
-  console.log("Server running on port 8080")
-});
+const wss = new WebSocket.Server({ server })
 
-app.post("/", (req, res) => {
-  const signature = req.headers.signature
-  
-  // This is the secret you entered when adding the webhook on RapidCompact.
-  const secret = 'secret' 
-  
-  const bodyString = JSON.stringify(req.body)
-  console.log(bodyString)
-  
-  // NOTE: This is necessary, as our webhook server is escaping `/` before signing the request.
-  const bodyEscaped = bodyString.replaceAll('/', '\\/') 
+let clients = []
 
-  // Calculate the HMAC signature using SHA256 and the given secret.
-  const calculatedSignature = crypto
-        .createHmac("sha256", secret)
-        .update(bodyEscaped)
-        .digest("hex")
+wss.on("connection", ws => {
+    clients.push(ws)
+    console.log("UE connected")
+})
 
-  // Check if the signature is valid.
-  const valid = signature == calculatedSignature
-  console.log('signature valid:', valid)
-  
-  // Here you can respond differently depending on if the signature is valid or not.
-  res.sendStatus(200)
-});
+app.post("/webhook", (req,res)=>{
+
+    const event = req.body
+
+    if(event.event_type === "optimization_finished"){
+
+        const model = event.data.rapidmodel["rapid.glb"]
+
+        const msg = JSON.stringify({
+            type:"model_ready",
+            url:model
+        })
+
+        clients.forEach(c=>c.send(msg))
+    }
+
+    res.sendStatus(200)
+})
